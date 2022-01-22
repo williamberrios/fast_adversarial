@@ -1,10 +1,13 @@
 # This module is adapted from https://github.com/mahyarnajibi/FreeAdversarialTraining/blob/master/main_free.py
 # Which in turn was adapted from https://github.com/pytorch/examples/blob/master/imagenet/main.py
-import init_paths
+import sys
+module_path = "lib"
+if module_path not in sys.path:
+    sys.path.append(module_path)
+#import init_paths
 import argparse
 import os
 import time
-import sys
 import torch
 import torch.nn as nn
 import torch.backends.cudnn as cudnn
@@ -16,10 +19,8 @@ import math
 import numpy as np
 from utils import *
 from validation import validate, validate_pgd
+from imagenet import Imagenet
 import torchvision.models as models
-
-from apex import amp
-import copy
 
 
 def parse_args():
@@ -43,7 +44,7 @@ def parse_args():
 # Parase config file and initiate logging
 configs = parse_config_file(parse_args())
 logger = initiate_logger(configs.output_name, configs.evaluate)
-print = logger.info
+print(logger.info)
 cudnn.benchmark = True
 
 def main():
@@ -65,11 +66,19 @@ def main():
     
     # Create the model
     if configs.pretrained:
-        print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
-        model = models.__dict__[configs.TRAIN.arch](pretrained=True)
+        if configs.TRAIN.arch == 'MVIT':
+            print('Loading Multiscale transformer')
+            #model = 
+        else:
+            print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
+            model = models.__dict__[configs.TRAIN.arch](pretrained=True)
     else:
-        print("=> creating model '{}'".format(configs.TRAIN.arch))
-        model = models.__dict__[configs.TRAIN.arch]()
+        if configs.TRAIN.arch == 'MVIT':
+            print('Loading Multiscale transformer')
+            #model = 
+        else:
+            print("=> creating model '{}'".format(configs.TRAIN.arch))
+            model = models.__dict__[configs.TRAIN.arch]()
     # Wrap the model into DataParallel
     model.cuda()
 
@@ -88,9 +97,10 @@ def main():
     optimizer = torch.optim.SGD(groups, configs.TRAIN.lr,
                                 momentum=configs.TRAIN.momentum,
                                 weight_decay=configs.TRAIN.weight_decay)
+    print(f'Group Decay: {group_decay}')
+    print(f'Group No-Decay: {group_no_decay}')
 
-    if configs.TRAIN.half and not configs.evaluate:
-        model, optimizer = amp.initialize(model, optimizer, opt_level="O1")
+
     model = torch.nn.DataParallel(model)
 
     # Resume if a valid checkpoint path is provided
@@ -108,36 +118,21 @@ def main():
             print("=> no checkpoint found at '{}'".format(configs.resume))
     
     # Initiate data loaders
-    traindir = os.path.join(configs.data, 'train')
-    valdir = os.path.join(configs.data, 'val')
+    train_dataset, val_dataset = Imagenet(configs,'train'),Imagenet(configs,'val')
+
+    train_loader = torch.utils.data.DataLoader(train_dataset, 
+                                               batch_size  = configs.DATA.batch_size, 
+                                               shuffle     = True,
+                                               num_workers = configs.DATA.workers, 
+                                               pin_memory  = True, 
+                                               sampler     = None)
     
-    resize_transform = []
 
-    if configs.DATA.img_size > 0: 
-        resize_transform = [ transforms.Resize(configs.DATA.img_size) ] 
-
-    train_dataset = datasets.ImageFolder(
-        traindir,
-        transforms.Compose(resize_transform + [
-            transforms.RandomResizedCrop(configs.DATA.crop_size),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),
-        ]))
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=configs.DATA.batch_size, shuffle=True,
-        num_workers=configs.DATA.workers, pin_memory=True, sampler=None)
-    
-    normalize = transforms.Normalize(mean=configs.TRAIN.mean,
-                                    std=configs.TRAIN.std)
-
-    val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose( resize_transform + [
-            transforms.CenterCrop(configs.DATA.crop_size),
-            transforms.ToTensor(),
-        ])),
-        batch_size=configs.DATA.batch_size, shuffle=False,
-        num_workers=configs.DATA.workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset 
+                                             batch_size  = configs.DATA.batch_size, 
+                                             shuffle     = False,
+                                             num_workers = configs.DATA.workers, 
+                                             pin_memory  = True)
 
     # If in evaluate mode: perform validation on PGD attacks as well as clean samples
     if configs.evaluate:
@@ -167,11 +162,6 @@ def main():
             'optimizer' : optimizer.state_dict(),
         }, is_best, os.path.join('trained_models', f'{configs.output_name}'),
         epoch + 1)
-        
-    # Automatically perform PGD Attacks at the end of training
-    # logger.info(pad_str(' Performing PGD Attacks '))
-    # for pgd_param in configs.ADV.pgd_attack:
-    #     validate_pgd(val_loader, val_model, criterion, pgd_param[0], pgd_param[1], configs, logger)
 
 
 # Fast Adversarial Training Module        
@@ -194,6 +184,8 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
     # switch to train mode
     model.train()
     end = time.time()
+    if half:
+        scaler = GradScaler()
     for i, (input, target) in enumerate(train_loader):
         input = input.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
@@ -212,14 +204,16 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
             in1 = input + noise_batch
             in1.clamp_(0, 1.0)
             in1.sub_(mean).div_(std)
-            output = model(in1)
-            loss = criterion(output, target)
-            if half: 
-                with amp.scale_loss(loss, optimizer) as scaled_loss: 
-                    scaled_loss.backward()
-            else:
-                loss.backward()
             
+            if half:
+                with torch.cuda.amp.autocast():
+                    output = model(in1)
+                    loss = criterion(output, target)
+                scaler.scale(loss).backward()
+            else:
+                output = model(in1)
+                loss = criterion(output, target)
+                loss.backward()    
             # Update the noise for the next iteration
             pert = fgsm(noise_batch.grad, configs.ADV.fgsm_step)
             global_noise_data[0:input.size(0)] += pert.data
@@ -230,18 +224,22 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
             in1 = input + noise_batch
             in1.clamp_(0, 1.0)
             in1.sub_(mean).div_(std)
-            output = model(in1)
-            loss = criterion(output, target)
+            
 
             # compute gradient and do SGD step
             optimizer.zero_grad()
             if half: 
-                with amp.scale_loss(loss, optimizer) as scaled_loss: 
-                    scaled_loss.backward()
-            else: 
+                with torch.cuda.amp.autocast():
+                    output = model(in1)
+                    loss = criterion(output, target)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                output = model(in1)
+                loss = criterion(output, target)
                 loss.backward()
-
-            optimizer.step()
+                optimizer.step()
 
             prec1, prec5 = accuracy(output, target, topk=(1, 5))
             losses.update(loss.item(), input.size(0))

@@ -45,7 +45,7 @@ ADV:
     - !!python/tuple [10, 0.00392156862] #[10 iters, 1.0/255.0]
     - !!python/tuple [50, 0.00392156862] #[50 iters, 1.0/255.0]
     
-DATA:
+DATA:    
     # Number of data workers
     workers: 16
 
