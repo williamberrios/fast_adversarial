@@ -2,7 +2,7 @@ TRAIN:
     
     # Architecture name, see pytorch models package for
     # a list of possible architectures
-    arch: 'resnet50'
+    arch: 'MVIT'
 
 
     # SGD paramters
@@ -57,7 +57,7 @@ ADV:
     
 DATA:
     # Number of data workers
-    workers: 4
+    workers: 32
 
     # Color value range
     max_color_value: 255.0

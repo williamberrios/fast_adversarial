@@ -2,7 +2,7 @@ TRAIN:
     
     # Architecture name, see pytorch models package for
     # a list of possible architectures
-    arch: 'resnet50'
+    arch: 'MVIT'
 
 
     # SGD paramters
@@ -47,7 +47,7 @@ ADV:
     
 DATA:
     # Number of data workers
-    workers: 16
+    workers: 64
 
     # Color value range
     max_color_value: 255.0
@@ -56,12 +56,12 @@ DATA:
 
     # Image Size
     # img_size: 160
-    img_size: 0
+    img_size: 256
 
     # Training batch size
-    batch_size: 512
+    batch_size: 128
 
     # Crop Size for data augmentation
-    crop_size: 128
+    crop_size: 224
 
-    
+pretrained_init: True

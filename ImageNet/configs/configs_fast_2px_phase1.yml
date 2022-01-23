@@ -2,7 +2,7 @@ TRAIN:
     
     # Architecture name, see pytorch models package for
     # a list of possible architectures
-    arch: 'resnet50'
+    arch: 'MVIT'
 
 
     # SGD paramters
@@ -11,7 +11,7 @@ TRAIN:
     weight_decay: 0.0001
 
     # Print frequency, is used for both training and testing
-    print_freq: 10
+    print_freq: 100
 
     # Dataset mean and std used for data normalization
     mean: !!python/tuple [0.485, 0.456, 0.406]
@@ -45,23 +45,19 @@ ADV:
     - !!python/tuple [10, 0.00392156862] #[10 iters, 1.0/255.0]
     - !!python/tuple [50, 0.00392156862] #[50 iters, 1.0/255.0]
     
-DATA:    
+DATA:        
     # Number of data workers
-    workers: 16
+    workers: 64
 
     # Color value range
     max_color_value: 255.0
 
     # FAST ADVERSARIAL TRAINING PARAMETER
-
     # Image Size
-    # img_size: 160
-    img_size: 0
-
+    img_size: 256
     # Training batch size
-    batch_size: 512
-
+    batch_size: 224
     # Crop Size for data augmentation
-    crop_size: 128
-
+    crop_size: 224
     
+pretrained_init: True

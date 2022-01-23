@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
 import multiprocessing
 cpus = multiprocessing.cpu_count()
-cpus = min(48,cpus)
+cpus = min(64,cpus)
 
-PATH = Path.home()/'imagenet'
+PATH = Path()/'../../Dataset/ILSVRC/Data/imagenet'
 #DEST = Path('/mnt/ram')
-DEST = Path.home()/'imagenet-sz'
+DEST = Path()/'../../Dataset/ILSVRC/Data/imagenet-sz'
 #szs = (int(128*1.25), int(256*1.25))
 # szs = (int(160*1.25),)
 szs = (160,352)

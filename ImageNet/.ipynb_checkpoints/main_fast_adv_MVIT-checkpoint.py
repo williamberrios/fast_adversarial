@@ -1,3 +1,4 @@
+# +
 # This module is adapted from https://github.com/mahyarnajibi/FreeAdversarialTraining/blob/master/main_free.py
 # Which in turn was adapted from https://github.com/pytorch/examples/blob/master/imagenet/main.py
 import sys
@@ -21,7 +22,16 @@ from utils import *
 from validation import validate, validate_pgd
 from imagenet import Imagenet
 import torchvision.models as models
+from slowfast.models.video_model_builder import MViT
+from slowfast.config.defaults import get_cfg
+from tqdm import tqdm
+from torch.cuda.amp import GradScaler
 
+CFG_PATH      =  './mvit_files/MVIT_B_16_CONV.yaml'
+PRETRAIN_PATH = './mvit_files/IN1K_MVIT_B_16_CONV.pyth'
+
+
+# -
 
 def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
@@ -35,14 +45,16 @@ def parse_args():
                     help='path to latest checkpoint (default: none)')
     parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
-    parser.add_argument('--pretrained', dest='pretrained', action='store_true',
-                    help='use pre-trained model')
     parser.add_argument('--restarts', default=1, type=int)
     return parser.parse_args()
 
 
+import os
+cwd = os.getcwd()
+print('Origin Route: ',cwd)
 # Parase config file and initiate logging
 configs = parse_config_file(parse_args())
+print("Configs: ",configs)
 logger = initiate_logger(configs.output_name, configs.evaluate)
 print(logger.info)
 cudnn.benchmark = True
@@ -65,17 +77,24 @@ def main():
 
     
     # Create the model
-    if configs.pretrained:
+    if configs.pretrained_init:
         if configs.TRAIN.arch == 'MVIT':
-            print('Loading Multiscale transformer')
-            #model = 
+            print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
+            cfg = get_cfg()
+            cfg.merge_from_file(CFG_PATH)
+            model = MViT(cfg)
+            checkpoint = torch.load(PRETRAIN_PATH)
+            model.load_state_dict(checkpoint['model_state'],strict = False)
         else:
             print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
             model = models.__dict__[configs.TRAIN.arch](pretrained=True)
     else:
         if configs.TRAIN.arch == 'MVIT':
-            print('Loading Multiscale transformer')
-            #model = 
+            
+            print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
+            cfg = get_cfg()
+            cfg.merge_from_file(CFG_PATH)
+            model = MViT(cfg)
         else:
             print("=> creating model '{}'".format(configs.TRAIN.arch))
             model = models.__dict__[configs.TRAIN.arch]()
@@ -97,8 +116,8 @@ def main():
     optimizer = torch.optim.SGD(groups, configs.TRAIN.lr,
                                 momentum=configs.TRAIN.momentum,
                                 weight_decay=configs.TRAIN.weight_decay)
-    print(f'Group Decay: {group_decay}')
-    print(f'Group No-Decay: {group_no_decay}')
+    #print(f'Group Decay: {group_decay}')
+    #print(f'Group No-Decay: {group_no_decay}')
 
 
     model = torch.nn.DataParallel(model)
@@ -119,7 +138,7 @@ def main():
     
     # Initiate data loaders
     train_dataset, val_dataset = Imagenet(configs,'train'),Imagenet(configs,'val')
-
+    print("Datasets Loaded")
     train_loader = torch.utils.data.DataLoader(train_dataset, 
                                                batch_size  = configs.DATA.batch_size, 
                                                shuffle     = True,
@@ -128,12 +147,12 @@ def main():
                                                sampler     = None)
     
 
-    val_loader = torch.utils.data.DataLoader(val_dataset 
+    val_loader = torch.utils.data.DataLoader(val_dataset,
                                              batch_size  = configs.DATA.batch_size, 
                                              shuffle     = False,
                                              num_workers = configs.DATA.workers, 
                                              pin_memory  = True)
-
+    print("Dataloaders Loaded")
     # If in evaluate mode: perform validation on PGD attacks as well as clean samples
     if configs.evaluate:
         logger.info(pad_str(' Performing PGD Attacks '))
@@ -144,8 +163,10 @@ def main():
     
     lr_schedule = lambda t: np.interp([t], configs.TRAIN.lr_epochs, configs.TRAIN.lr_values)[0]
     
+    print("Init Training")
     for epoch in range(configs.TRAIN.start_epoch, configs.TRAIN.epochs):
         # train for one epoch
+        print(f"=================== Epoch: {epoch} ==================")
         train(train_loader, model, criterion, optimizer, epoch, lr_schedule, configs.TRAIN.half)
 
         # evaluate on validation set
@@ -186,7 +207,7 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
     end = time.time()
     if half:
         scaler = GradScaler()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (input, target) in (enumerate(train_loader)):
         input = input.cuda(non_blocking=True)
         target = target.cuda(non_blocking=True)
         data_time.update(time.time() - end)

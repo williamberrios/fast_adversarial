@@ -2,7 +2,7 @@ TRAIN:
     
     # Architecture name, see pytorch models package for
     # a list of possible architectures
-    arch: 'resnet50'
+    arch: 'MVIT'
 
 
     # SGD paramters
@@ -70,12 +70,12 @@ DATA:
 
     # Image Size
     # img_size: 352
-    img_size: 0
+    img_size: 256
 
     # Training batch size
-    batch_size: 224
+    batch_size: 128
 
     # Crop Size for data augmentation
     crop_size: 224
 
-    
+pretrained_init: False

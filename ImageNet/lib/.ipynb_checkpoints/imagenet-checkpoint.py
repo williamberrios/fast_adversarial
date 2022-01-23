@@ -18,17 +18,17 @@ class Imagenet(torch.utils.data.Dataset):
         self.num_retries = num_retries
         self.cfg = cfg
         self.mode = mode
-        self.data_path = cfg.DATA.PATH_TO_DATA_DIR
+        self.data_path = cfg.data
         assert mode in [
             "train",
             "val",
             "test",
         ], "Split '{}' not supported for ImageNet".format(mode)
         print("Constructing ImageNet {}...".format(mode))
-        if cfg.DATA.PATH_TO_PRELOAD_IMDB == "":
-            self._construct_imdb()
-        else:
-            self._load_imdb()
+        #if cfg.DATA.PATH_TO_PRELOAD_IMDB == "":
+        self._construct_imdb()
+        #else:
+        #    self._load_imdb()
 
     def _load_imdb(self):
         split_path = os.path.join(
@@ -76,21 +76,21 @@ class Imagenet(torch.utils.data.Dataset):
             with Image.open(f) as im:
                 im = im.convert("RGB")
         
-        normalize = transforms.Normalize(mean=cfg.TRAIN.MEAN,std=cfg.TRAIN.STD)
-        if cfg.DATA.IMG_SIZE > 0: 
-                resize_transform = [ transforms.Resize(cfg.DATA.IMG_SIZE) ] 
+        #normalize = transforms.Normalize(mean=self.cfg.TRAIN.mean,std=self.cfg.TRAIN.std)
+        if self.cfg.DATA.img_size > 0: 
+                resize_transform = [ transforms.Resize(self.cfg.DATA.img_size,interpolation = 3) ] 
         else:
                 resize_transform = []
         # Watchout the normalize parameter -> Not seen in the original code
         if self.mode == "train":
             aug_transform = transforms.Compose( resize_transform + [
-                                                                    transforms.RandomResizedCrop(cfg.DATA.CROP_SIZE),
+                                                                    transforms.RandomResizedCrop(self.cfg.DATA.crop_size),
                                                                     transforms.RandomHorizontalFlip(),
                                                                     transforms.ToTensor()])#,
                                                                     #normalize])
         else:
             aug_transform = transforms.Compose(resize_transform + [
-                                                   transforms.CenterCrop(cfg.DATA.CROP_SIZE),
+                                                   transforms.CenterCrop(self.cfg.DATA.crop_size),
                                                    transforms.ToTensor()])#,
                                                    #normalize])
         
@@ -99,13 +99,13 @@ class Imagenet(torch.utils.data.Dataset):
 
     def __load__(self, index):
         try:
-            # Load the image
+        # Load the image
             im_path = self._imdb[index]["im_path"]
             # Prepare the image for training / testing
             im = self._prepare_im_tf(im_path)
             return im
         except Exception:
-            #print('Error Loading Data')
+            print(f'Error Loading Data at index: {index}')
             return None
 
     def __getitem__(self, index):
@@ -136,10 +136,10 @@ class Imagenet(torch.utils.data.Dataset):
 if __name__ == '__main__':
     from easydict import EasyDict
     cfg = {'DATA' : {'PATH_TO_PRELOAD_IMDB' : "",
-                     'PATH_TO_DATA_DIR'     : "../../../Dataset/ILSVRC/Data/CLS-LOC",
-                     'IMG_SIZE'  : 0,
-                     'CROP_SIZE' : 224},
-           'TRAIN': {'MEAN': [0.485, 0.456, 0.406],'STD' : [0.229, 0.224, 0.225]}}
+                     'img_size'  : 0,
+                     'crop_size' : 224},
+           'data'     : "../../../Dataset/ILSVRC/Data/imagenet",
+           'TRAIN': {'mean': [0.485, 0.456, 0.406],'std' : [0.229, 0.224, 0.225]}}
     cfg = EasyDict(cfg)
     dataset = Imagenet(cfg,'val',num_retries = 10)
     print(dataset.__getitem__(0))
