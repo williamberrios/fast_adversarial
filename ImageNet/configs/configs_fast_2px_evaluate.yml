@@ -5,13 +5,18 @@ TRAIN:
     arch: 'MVIT'
 
 
-    # SGD paramters
-    lr: 0.1
+    optimizer_name: 'adam'
+    lr: 0.0001
     momentum: 0.9
     weight_decay: 0.0001
+    scheduler_name: 'linear'
+    start_epoch: 0
+    epochs: 4
+    lr_epochs: !!python/tuple [0,4]
+    lr_values: !!python/tuple [0.0001,0.0005]
 
     # Print frequency, is used for both training and testing
-    print_freq: 10
+    print_freq: 1
 
     # Dataset mean and std used for data normalization
     mean: !!python/tuple [0.485, 0.456, 0.406]
@@ -53,11 +58,14 @@ ADV:
     # the same clip_eps as above is used for PGD
     pgd_attack: 
     #- !!python/tuple [10, 0.00392156862] #[10 iters, 1.0/255.0]
-    - !!python/tuple [50, 0.00392156862] #[50 iters, 1.0/255.0]
+    #- !!python/tuple [50, 0.00392156862] #[50 iters, 1.0/255.0]
+    - !!python/tuple [10, 0.00784313725] #[50 iters, 1.0/255.0]
+    
+
     
 DATA:
     # Number of data workers
-    workers: 32
+    workers: 64
 
     # Color value range
     max_color_value: 255.0
@@ -65,12 +73,16 @@ DATA:
     # FAST ADVERSARIAL TRAINING PARAMETER
 
     # Image Size
-    img_size: 0
+    img_size: 256
 
     # Training batch size
     batch_size: 128
 
     # Crop Size for data augmentation
-    crop_size: 288
+    crop_size: 224
 
-    
+pretrained_init: False
+PROJECT:
+    project_name: 'PGD Adv-Training Mvit'
+    runname: 'fast_2px_phase1'
+    wandb: False

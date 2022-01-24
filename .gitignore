@@ -1,1 +1,5 @@
 *.pyc
+Imagenet/trained_models/**
+Imagenet/wandb/**
+Imagenet/out_files/**
+

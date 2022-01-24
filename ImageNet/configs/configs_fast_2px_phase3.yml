@@ -3,15 +3,27 @@ TRAIN:
     # Architecture name, see pytorch models package for
     # a list of possible architectures
     arch: 'MVIT'
-
-
     # SGD paramters
-    lr: 0.1
+    #lr: 0.1
+    #momentum: 0.9
+    #weight_decay: 0.0001
+    
+    
+    # Adam paramters
+    
+    lr: 0.00025
     momentum: 0.9
     weight_decay: 0.0001
+    scheduler_name: 'linear'
+    start_epoch: 5
+    epochs: 6
+    lr_epochs: !!python/tuple [5,6]
+    lr_values: !!python/tuple [0.00025,0.000125]
+    
+    
 
     # Print frequency, is used for both training and testing
-    print_freq: 100
+    print_freq: 10
 
     # Dataset mean and std used for data normalization
     mean: !!python/tuple [0.485, 0.456, 0.406]
@@ -20,23 +32,29 @@ TRAIN:
     # FAST ADVERSARIAL TRAINING PARAMETER
 
     # Starting epoch (interpret as multiplied by n_repeats)
-    # start_epoch: 6
+    # start_epoch: 12
     # # Number of training epochs
-    # epochs: 28
+    # epochs: 24
 
-    # lr_epochs: !!python/tuple [25,28]
-    # lr_values: !!python/tuple [0.0025, 0.00025]
+    # lr_epochs: !!python/tuple [12,22,25]
+    # lr_values: !!python/tuple [0.4375,0.04375,0.004375]
 
     # Starting epoch (interpret as multiplied by n_repeats)
-    start_epoch: 12
+    #start_epoch: 5
     # Number of training epochs
-    epochs: 15
+    #epochs: 10
+    # Learnin rate schduler:
+    
+    
+    #lr_epochs: !!python/tuple [5,12]
+    #lr_values: !!python/tuple [5e-4,]
 
-    # lr_epochs: !!python/tuple [12,13,15]
-    # lr_values: !!python/tuple [0, 0.01, 0.001]
+    # lr_epochs: !!python/tuple [6,7,12]
+    # lr_values: !!python/tuple [0,0.1,0.01]
 
-    lr_epochs: !!python/tuple [12,15]
-    lr_values: !!python/tuple [0.004, 0.0004]
+    # epochs: 18
+    # lr_epochs: !!python/tuple [6,12,16,18]
+    # lr_values: !!python/tuple [0.1,0.01,0.001,0]
 
     half: true
     random_init: true
@@ -67,9 +85,15 @@ DATA:
     img_size: 256
 
     # Training batch size
-    batch_size: 224
+    batch_size: 256
 
     # Crop Size for data augmentation
     crop_size: 224
 
-pretrained_init: False     
+PROJECT:
+    project_name: 'Fast Adv-Training Mvit'
+    runname: 'fast_2px_phase2'
+    wandb: True
+    
+pretrained_init: False
+    

@@ -1,5 +1,8 @@
 import logging
 import os
+import random
+import numpy as np
+import torch
 import datetime
 import torchvision.models as models
 import math
@@ -101,3 +104,19 @@ def save_checkpoint(state, is_best, filepath, epoch):
     # Save best model
     if is_best:
         shutil.copyfile(filename, os.path.join(filepath, 'model_best.pth.tar'))
+
+
+def seed_everything(seed=42):
+    '''
+    
+    Function to put a seed to every step and make code reproducible
+    Input:
+    - seed: random state for the events 
+    '''
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False

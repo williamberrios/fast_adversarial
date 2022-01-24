@@ -11,15 +11,14 @@ TRAIN:
     
     # Adam paramters
     
-    lr: 0.0005
-    optimizer_name: 'adam'
+    lr: 0.000125
     momentum: 0.9
     weight_decay: 0.0001
     scheduler_name: 'linear'
-    start_epoch: 4
-    epochs: 5
-    lr_epochs: !!python/tuple [4,5]
-    lr_values: !!python/tuple [0.0005,0.00025]
+    start_epoch: 6
+    epochs: 7
+    lr_epochs: !!python/tuple [6,7]
+    lr_values: !!python/tuple [0.000125,0.0000625]
     
     
 

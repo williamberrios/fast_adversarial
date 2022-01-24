@@ -2,6 +2,7 @@
 # This module is adapted from https://github.com/mahyarnajibi/FreeAdversarialTraining/blob/master/main_free.py
 # Which in turn was adapted from https://github.com/pytorch/examples/blob/master/imagenet/main.py
 import sys
+import wandb
 module_path = "lib"
 if module_path not in sys.path:
     sys.path.append(module_path)
@@ -26,6 +27,8 @@ from slowfast.models.video_model_builder import MViT
 from slowfast.config.defaults import get_cfg
 from tqdm import tqdm
 from torch.cuda.amp import GradScaler
+import warnings
+warnings.filterwarnings('ignore')
 
 CFG_PATH      =  './mvit_files/MVIT_B_16_CONV.yaml'
 PRETRAIN_PATH = './mvit_files/IN1K_MVIT_B_16_CONV.pyth'
@@ -57,9 +60,22 @@ configs = parse_config_file(parse_args())
 print("Configs: ",configs)
 logger = initiate_logger(configs.output_name, configs.evaluate)
 print(logger.info)
-cudnn.benchmark = True
+
 
 def main():
+    # Make Reproducible code:
+    seed_everything(0)
+    # Initialize wandb
+    if configs.PROJECT.wandb:
+        run = wandb.init(project = configs.PROJECT.project_name,
+                         save_code = True,
+                         reinit    = True)
+        run.name = configs.PROJECT.runname
+        run.save()
+    else:
+        run = None
+
+    
     # Scale and initialize the parameters
     best_prec1 = 0
     configs.TRAIN.epochs = int(math.ceil(configs.TRAIN.epochs / configs.ADV.n_repeats))
@@ -85,6 +101,7 @@ def main():
             model = MViT(cfg)
             checkpoint = torch.load(PRETRAIN_PATH)
             model.load_state_dict(checkpoint['model_state'],strict = False)
+            del checkpoint
         else:
             print("=> using pre-trained model '{}'".format(configs.TRAIN.arch))
             model = models.__dict__[configs.TRAIN.arch](pretrained=True)
@@ -109,13 +126,15 @@ def main():
 
     # Criterion:
     criterion = nn.CrossEntropyLoss().cuda()
-    
-    group_decay = [p for p in model.parameters() if 'BatchNorm' not in param_to_moduleName[p]]
-    group_no_decay = [p for p in model.parameters() if 'BatchNorm' in param_to_moduleName[p]]
-    groups = [dict(params=group_decay), dict(params=group_no_decay, weight_decay=0)]
-    optimizer = torch.optim.SGD(groups, configs.TRAIN.lr,
-                                momentum=configs.TRAIN.momentum,
-                                weight_decay=configs.TRAIN.weight_decay)
+    if configs.TRAIN.optimizer_name == 'sgd':
+        group_decay = [p for p in model.parameters() if 'BatchNorm' not in param_to_moduleName[p]]
+        group_no_decay = [p for p in model.parameters() if 'BatchNorm' in param_to_moduleName[p]]
+        groups = [dict(params=group_decay), dict(params=group_no_decay, weight_decay=0)]
+        optimizer = torch.optim.SGD(groups, configs.TRAIN.lr,
+                                    momentum=configs.TRAIN.momentum,
+                                    weight_decay=configs.TRAIN.weight_decay)
+    elif configs.TRAIN.optimizer_name == 'adam':
+        optimizer = torch.optim.Adam(model.parameters(), lr=configs.TRAIN.lr, weight_decay=configs.TRAIN.weight_decay)
     #print(f'Group Decay: {group_decay}')
     #print(f'Group No-Decay: {group_no_decay}')
 
@@ -152,6 +171,7 @@ def main():
                                              shuffle     = False,
                                              num_workers = configs.DATA.workers, 
                                              pin_memory  = True)
+    total_steps = len(train_loader)
     print("Dataloaders Loaded")
     # If in evaluate mode: perform validation on PGD attacks as well as clean samples
     if configs.evaluate:
@@ -160,18 +180,18 @@ def main():
             validate_pgd(val_loader, model, criterion, pgd_param[0], pgd_param[1], configs, logger)
         validate(val_loader, model, criterion, configs, logger)
         return
-    
-    lr_schedule = lambda t: np.interp([t], configs.TRAIN.lr_epochs, configs.TRAIN.lr_values)[0]
-    
+    if configs.TRAIN.scheduler_name == 'linear':
+        lr_schedule = lambda t: np.interp([t], configs.TRAIN.lr_epochs, configs.TRAIN.lr_values)[0]
+    else:
+        Exception('Error')
     print("Init Training")
     for epoch in range(configs.TRAIN.start_epoch, configs.TRAIN.epochs):
         # train for one epoch
         print(f"=================== Epoch: {epoch} ==================")
-        train(train_loader, model, criterion, optimizer, epoch, lr_schedule, configs.TRAIN.half)
-
+        train(train_loader, model, criterion, optimizer, epoch, lr_schedule, configs.TRAIN.half,run)
+        
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion, configs, logger)
-
+        prec1 = validate(val_loader, model, criterion, configs, logger)            
         # remember best prec@1 and save checkpoint
         is_best = prec1 > best_prec1
         best_prec1 = max(prec1, best_prec1)
@@ -181,14 +201,18 @@ def main():
             'state_dict': model.state_dict(),
             'best_prec1': best_prec1,
             'optimizer' : optimizer.state_dict(),
-        }, is_best, os.path.join('trained_models', f'{configs.output_name}'),
-        epoch + 1)
+        }, is_best, os.path.join('trained_models', f'{configs.output_name}'),epoch + 1)
+        if run is not None:
+            run.log({'Valid_Prec@1_epoch':np.round(prec1.cpu().numpy(),4)})
+            run.log({'Best_Prec@1_epoch':np.round(best_prec1.cpu().numpy(),4)})
+    if run is not None:
+        run.finish()
 
 
 # Fast Adversarial Training Module        
 global global_noise_data
 global_noise_data = torch.zeros([configs.DATA.batch_size, 3, configs.DATA.crop_size, configs.DATA.crop_size]).cuda()
-def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=False): 
+def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=False,run = None): 
     global global_noise_data
 
     mean = torch.Tensor(np.array(configs.TRAIN.mean)[:, np.newaxis, np.newaxis])
@@ -216,9 +240,11 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
             global_noise_data.uniform_(-configs.ADV.clip_eps, configs.ADV.clip_eps)
         for j in range(configs.ADV.n_repeats):
             # update learning rate
-            lr = lr_schedule(epoch + (i*configs.ADV.n_repeats + j + 1)/len(train_loader))
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
+            if configs.TRAIN.scheduler_name == 'linear':
+                assert j == 0
+                lr = lr_schedule(epoch + (i*configs.ADV.n_repeats+1)/(len(train_loader)))
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] = lr
 
             # Ascend on the global noise
             noise_batch = Variable(global_noise_data[0:input.size(0)], requires_grad=True)#.cuda()
@@ -261,7 +287,6 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
                 loss = criterion(output, target)
                 loss.backward()
                 optimizer.step()
-
             prec1, prec5 = accuracy(output, target, topk=(1, 5))
             losses.update(loss.item(), input.size(0))
             top1.update(prec1[0], input.size(0))
@@ -270,19 +295,23 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_schedule, half=Fa
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-
             if i % configs.TRAIN.print_freq == 0:
                 print('Train Epoch: [{0}][{1}/{2}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Loss {cls_loss.val:.4f} ({cls_loss.avg:.4f})\t'
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})\t'
-                      'LR {lr:.3f}'.format(
+                      'Prec@1 {top1.val:.5f} ({top1.avg:.5f})\t'
+                      'Prec@5 {top5.val:.5f} ({top5.avg:.5f})\t'
+                      'LR {lr:.6f}'.format(
                        epoch, i, len(train_loader), batch_time=batch_time,
                        data_time=data_time, top1=top1,
                        top5=top5,cls_loss=losses, lr=lr))
+                
                 sys.stdout.flush()
+                if run is not None:
+                    run.log({'lr':optimizer.param_groups[0]['lr']})
+                    run.log({'Train_Prec@1_avg':np.round(top1.avg.cpu().numpy(),3)})
+                    run.log({'Train_Prec@5_avg':np.round(top5.avg.cpu().numpy(),3)})
 
 if __name__ == '__main__':
     main()
